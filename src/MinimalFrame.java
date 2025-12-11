@@ -1,4 +1,5 @@
 import javax.swing.*;
+import javax.swing.text.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
@@ -9,6 +10,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
+import java.awt.Color;
 
 // NOTE: This class assumes FileSaver.java, FileLoader.java, and LocalAIModelManager.java are compiled and available.
 public class MinimalFrame {
@@ -17,15 +19,18 @@ public class MinimalFrame {
     private static JComboBox<String> modelComboBox;
     private static JComboBox<String> onlineModelComboBox;
     private static JTextArea inputArea;
-    private static JTextArea chatArea; // Made instance variable for access in window listener
+    private static JTextPane chatPane; // Changed from JTextArea to JTextPane for colored text
+    private static StyleContext styleContext;
+    private static Style userStyle;
+    private static Style aiStyle;
 
     // --- MAIN METHOD ---
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
             JFrame frame = new JFrame();
             frame.setTitle("AI Chat Client");
-            frame.setSize(1280, 1400);
-            frame.setResizable(false);
+            frame.setSize(1280, 1000);
+            frame.setResizable(true);
             frame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE); // Changed to handle manually
 
             // Add window listener to handle exit with save prompt
@@ -53,6 +58,7 @@ public class MinimalFrame {
             JButton saveButton = new JButton("Save Convo");
             JButton sendButton = new JButton("Send");
             JButton refreshButton = new JButton("Refresh Models");
+            JButton newConvoButton = new JButton("New Conversation"); // New button
 
             // Helper method to safely get the ActionListener (needed for radio buttons)
             ActionListener[] networkListeners = networkButton.getActionListeners();
@@ -138,10 +144,20 @@ public class MinimalFrame {
 
             // --- END: COMPLETE KEY BINDING SETUP ---
 
+            // Initialize styles for colored text
+            styleContext = new StyleContext();
+            userStyle = styleContext.addStyle("UserStyle", null);
+            StyleConstants.setForeground(userStyle, Color.RED);
+            StyleConstants.setBold(userStyle, true);
+
+            aiStyle = styleContext.addStyle("AIStyle", null);
+            StyleConstants.setForeground(aiStyle, Color.BLUE);
+            StyleConstants.setBold(aiStyle, true);
+
             // Create scrollable text areas
-            chatArea = new JTextArea(); // Now instance variable
-            chatArea.setEditable(false);
-            JScrollPane scrollPane1 = new JScrollPane(chatArea);
+            chatPane = new JTextPane(); // Changed to JTextPane for colored text
+            chatPane.setEditable(false);
+            JScrollPane scrollPane1 = new JScrollPane(chatPane);
 
             responseArea = new JTextArea();
             responseArea.setEditable(false);
@@ -173,15 +189,16 @@ public class MinimalFrame {
             onlineButton.setBounds(120, 10, 100, 25);
             loadButton.setBounds(230, 10, 100, 25);
             saveButton.setBounds(340, 10, 100, 25);
-            apiEndpointField.setBounds(450, 10, 200, 25);
-            refreshButton.setBounds(920, 10, 120, 25);
-            modelComboBox.setBounds(660, 10, 120, 25);
-            onlineModelComboBox.setBounds(790, 10, 120, 25);
+            apiEndpointField.setBounds(450, 10, 150, 25);
+            refreshButton.setBounds(1120, 10, 120, 25);
+            modelComboBox.setBounds(660, 10, 220, 25);
+            onlineModelComboBox.setBounds(890, 10, 120, 25);
 
             scrollPane1.setBounds(10, 50, 1260, 600);
             inputScrollPane.setBounds(10, 710, 1000, 200);
             scrollPane2.setBounds(10, 920, 1260, 200);
             sendButton.setBounds(1020, 710, 100, 25);
+            newConvoButton.setBounds(1020, 740, 100, 25); // Positioned under Send button
 
             // Add action listeners
             networkButton.addActionListener(e -> {
@@ -200,16 +217,47 @@ public class MinimalFrame {
             });
 
             refreshButton.addActionListener(e -> scanForModels());
-            sendButton.addActionListener(new SendButtonListener(chatArea, onlineButton));
+            sendButton.addActionListener(new SendButtonListener(chatPane, onlineButton));
+
+            // New Conversation button action listener
+            newConvoButton.addActionListener(e -> {
+                String conversation = chatPane.getText().trim();
+
+                // Only prompt if there's actual conversation content
+                if (!conversation.isEmpty() &&
+                        !conversation.equals("You: \n\nAI: ") && // Default empty state
+                        !conversation.equals("You: \n\n")) {
+
+                    int result = JOptionPane.showConfirmDialog(
+                            frame,
+                            "Start a new conversation? Current conversation will be cleared.",
+                            "New Conversation",
+                            JOptionPane.YES_NO_OPTION,
+                            JOptionPane.QUESTION_MESSAGE
+                    );
+
+                    if (result == JOptionPane.YES_OPTION) {
+                        chatPane.setText("");
+                        responseArea.setText("");
+                        inputArea.setText("");
+                    }
+                } else {
+                    // No conversation to clear, just clear everything
+                    chatPane.setText("");
+                    responseArea.setText("");
+                    inputArea.setText("");
+                }
+            });
 
             // --- UPDATED ACTION LISTENERS FOR EXTERNAL FILE HANDLERS ---
             loadButton.addActionListener(e -> {
                 String loadedContent = FileLoader.loadFile(frame); // Use frame as parent
                 if (loadedContent != null) {
-                    chatArea.setText(loadedContent.trim());
+                    // For loading, we'll set plain text without colors
+                    chatPane.setText(loadedContent.trim());
                 }
             });
-            saveButton.addActionListener(e -> FileSaver.saveConversation(frame, chatArea.getText()));
+            saveButton.addActionListener(e -> FileSaver.saveConversation(frame, chatPane.getText()));
             // --- END UPDATED LISTENERS ---
 
             // Ctrl+Enter for Send is on the inputArea, which is correct
@@ -228,6 +276,7 @@ public class MinimalFrame {
             frame.add(loadButton);
             frame.add(saveButton);
             frame.add(refreshButton);
+            frame.add(newConvoButton); // Add new button to frame
             frame.add(apiEndpointField);
             frame.add(modelComboBox);
             frame.add(onlineModelComboBox);
@@ -242,7 +291,7 @@ public class MinimalFrame {
 
     // --- NEW METHOD: Prompt for save on exit ---
     private static void promptForSaveAndExit(JFrame frame) {
-        String conversation = chatArea.getText().trim();
+        String conversation = chatPane.getText().trim();
 
         // Only prompt if there's actual conversation content
         if (!conversation.isEmpty() &&
@@ -284,8 +333,8 @@ public class MinimalFrame {
         connection.setRequestProperty("Accept", "application/json");
         connection.setRequestProperty("Authorization", "Bearer " + apiKey);
         connection.setDoOutput(true);
-        connection.setConnectTimeout(120000);
-        connection.setReadTimeout(120000);
+        connection.setConnectTimeout(12000000);
+        connection.setReadTimeout(12000000);
 
         try (OutputStream os = connection.getOutputStream()) {
             byte[] input = requestBody.getBytes(StandardCharsets.UTF_8);
@@ -322,8 +371,14 @@ public class MinimalFrame {
             throw new IOException("No online model selected.");
         }
 
-        String escapedPrompt = prompt.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
-
+        String escapedPrompt = prompt
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t")
+                .replace("\b", "\\b")
+                .replace("\f", "\\f");
         if (model.equals("Deepseek") || model.equals("ChatGPT")) {
 
             String apiKey;
@@ -488,6 +543,16 @@ public class MinimalFrame {
                 .replace("\\\\", "\\");
     }
 
+    // Helper method to append colored text to the chat pane
+    private static void appendColoredText(JTextPane pane, String text, Style style) {
+        try {
+            Document doc = pane.getDocument();
+            doc.insertString(doc.getLength(), text, style);
+        } catch (BadLocationException e) {
+            e.printStackTrace();
+        }
+    }
+
     // LocalAI Client implementation
     private static class LocalAIClient {
         private final String baseUrl;
@@ -525,8 +590,8 @@ public class MinimalFrame {
 
             connection.setRequestMethod("GET");
             connection.setRequestProperty("Accept", "application/json");
-            connection.setConnectTimeout(10000);
-            connection.setReadTimeout(10000);
+            connection.setConnectTimeout(1000000);
+            connection.setReadTimeout(1000000);
 
             int responseCode = connection.getResponseCode();
             if (responseCode == HttpURLConnection.HTTP_OK) {
@@ -561,8 +626,8 @@ public class MinimalFrame {
             connection.setRequestProperty("Content-Type", "application/json");
             connection.setRequestProperty("Accept", "application/json");
             connection.setDoOutput(true);
-            connection.setConnectTimeout(120000);
-            connection.setReadTimeout(120000);
+            connection.setConnectTimeout(12000000);
+            connection.setReadTimeout(12000000);
 
             try (OutputStream os = connection.getOutputStream()) {
                 byte[] input = requestBody.getBytes(StandardCharsets.UTF_8);
@@ -605,7 +670,14 @@ public class MinimalFrame {
         }
 
         public String toJson() {
-            String escapedContent = content.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
+            String escapedContent = content
+                    .replace("\\", "\\\\")
+                    .replace("\"", "\\\"")
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r")
+                    .replace("\t", "\\t")
+                    .replace("\b", "\\b")
+                    .replace("\f", "\\f");
             return String.format("{\"role\": \"%s\", \"content\": \"%s\"}", role, escapedContent);
         }
     }
@@ -613,11 +685,11 @@ public class MinimalFrame {
 
     // Send Button Action Listener - MODIFIED FOR ONLINE/LOCAL ROUTING
     private static class SendButtonListener implements ActionListener {
-        private final JTextArea chatArea;
+        private final JTextPane chatPane;
         private final JRadioButton onlineButton;
 
-        public SendButtonListener(JTextArea chatArea, JRadioButton onlineButton) {
-            this.chatArea = chatArea;
+        public SendButtonListener(JTextPane chatPane, JRadioButton onlineButton) {
+            this.chatPane = chatPane;
             this.onlineButton = onlineButton;
         }
 
@@ -626,7 +698,10 @@ public class MinimalFrame {
             String userInput = inputArea.getText().trim();
             if (userInput.isEmpty()) return;
 
-            chatArea.append("You: " + userInput + "\n\n");
+            // Append user input in red
+            appendColoredText(chatPane, "You: ", userStyle);
+            appendColoredText(chatPane, userInput + "\n\n", null); // Regular text for the message content
+
             inputArea.setText("");
 
             new Thread(() -> {
@@ -657,7 +732,7 @@ public class MinimalFrame {
                         }
 
                         LocalAIClient client = new LocalAIClient(endpoint);
-                        java.util.List<Message> conversationHistory = parseConversationHistory(chatArea.getText());
+                        java.util.List<Message> conversationHistory = parseConversationHistory(chatPane.getText());
                         conversationHistory.add(new Message("user", userInput));
 
                         response = client.sendChatRequestWithHistory(currentModel, conversationHistory);
@@ -667,9 +742,12 @@ public class MinimalFrame {
                     SwingUtilities.invokeLater(() -> {
                         String displayModel = onlineButton.isSelected() ? currentModel : "AI";
 
-                        chatArea.append(displayModel + ": " + formattedResponse + "\n\n");
+                        // Append AI response in blue
+                        appendColoredText(chatPane, displayModel + ": ", aiStyle);
+                        appendColoredText(chatPane, formattedResponse + "\n\n", null); // Regular text for the message content
+
                         responseArea.setText("Raw Response (" + displayModel + ", length: " + response.length() + "):\n" + response);
-                        chatArea.setCaretPosition(chatArea.getDocument().getLength());
+                        chatPane.setCaretPosition(chatPane.getDocument().getLength());
 
                         if (response.contains("\"finish_reason\":\"length\"")) {
                             JOptionPane.showMessageDialog(null,
