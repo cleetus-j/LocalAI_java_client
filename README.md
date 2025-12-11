@@ -21,6 +21,3 @@ F10- Load Conversation (from txt or zip)
 F11-  Save Conversation (again, to txt or zip)
 F12-  Refresh model list (if you install new ones, or restart the instance)
 
-What should work, but not (fix it, future me!):
-F1-  switch to local network mode
-F2-  switch to online model mode
